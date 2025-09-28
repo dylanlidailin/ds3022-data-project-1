@@ -11,16 +11,13 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 def analysis():
-    """
-    Performs a series of analyses on the transformed taxi data and generates a plot.
-    """
     con = None
     try:
         # PROCESS 1: Connect to the database
         con = duckdb.connect("emissions.duckdb", read_only=True)
         # LOG: Records a successful database connection.
         logger.info("Successfully connected to DuckDB for analysis.")
-
+        print("Connected to DuckDB for analysis.")
         # 1. Largest carbon producing trip
         logger.info("Starting analysis: Largest carbon producing trips.")
         print("\n--- Largest Carbon Producing Trips ---")
@@ -28,7 +25,7 @@ def analysis():
             # FIX: Querying the _transformed table which contains trip_co2_kgs
             result = con.execute(f"""
                 SELECT trip_distance, passenger_count, trip_co2_kgs
-                FROM {taxi_type}_taxi_data_transformed
+                FROM {taxi_type}_taxi_data_clean
                 ORDER BY trip_co2_kgs DESC
                 LIMIT 1;
             """).fetchone()
@@ -50,7 +47,7 @@ def analysis():
                 # FIX: Querying the _transformed table
                 results = con.execute(f"""
                     SELECT {period}, AVG(trip_co2_kgs) AS avg_co2
-                    FROM {taxi_type}_taxi_data_transformed
+                    FROM {taxi_type}_taxi_data_clean
                     GROUP BY {period}
                     ORDER BY avg_co2 DESC;
                 """).fetchall()
@@ -70,13 +67,13 @@ def analysis():
         # FIX: Use one efficient GROUP BY query per taxi type instead of looping
         yellow_monthly_data = con.execute("""
             SELECT month_of_year, SUM(trip_co2_kgs)
-            FROM yellow_taxi_data_transformed
+            FROM yellow_taxi_data_clean
             GROUP BY month_of_year ORDER BY month_of_year;
         """).fetchall()
 
         green_monthly_data = con.execute("""
             SELECT month_of_year, SUM(trip_co2_kgs)
-            FROM green_taxi_data_transformed
+            FROM green_taxi_data_clean
             GROUP BY month_of_year ORDER BY month_of_year;
         """).fetchall()
 
