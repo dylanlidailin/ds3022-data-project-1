@@ -26,72 +26,108 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Download Parquet files for Yellow and Green taxi data for 2024
-def download_green_taxi_data(year=2024):
-    base_url = "https://d37ci6vzurychx.cloudfront.net/trip-data/green_tripdata_{year}-{month:02d}.parquet"
-    con = duckdb.connect("emissions.duckdb")
-    
-    # Create the table by reading the first month's data
-    first_month_url = base_url.format(year=year, month=1)
-    try:
-        logger.info(f"Creating table with January data from {first_month_url}")
-        con.execute(f"""
-            CREATE TABLE green_taxi_data AS
-            SELECT * FROM read_parquet('{first_month_url}')
-        """)
-        logger.info(f"Created table with {year}-01 green taxi data")
-    except Exception as e:
-        logger.error(f"Failed to create table with {first_month_url}: {e}")
-        return
-    
-    # Insert data from remaining months
-    for month in range(2, 13):
-        url = base_url.format(year=year, month=month)
-        logger.info(f"Inserting month {month} data from {url}")
-        try:
-            con.execute(f"""
-                INSERT INTO yellow_taxi_data  -- <- Fixed table name
-                SELECT * FROM read_parquet('{url}')
-            """)
-            logger.info(f"Added {year}-{month:02d} green taxi data")
-        except Exception as e:
-            logger.error(f"Failed to insert data from {url}: {e}")
-    
-    con.close()
-    print("Green taxi data saved to emissions.duckdb")
-
-
-def download_yellow_taxi_data(year=2024):
+def download_yellow_taxi_data():
+    years = [2015, 2016, 2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024]
     base_url = "https://d37ci6vzurychx.cloudfront.net/trip-data/yellow_tripdata_{year}-{month:02d}.parquet"
-    con = duckdb.connect("emissions.duckdb")
-    
-    # Create the table by reading the first month's data
-    first_month_url = base_url.format(year=year, month=1)
+    db_file = "emissions.duckdb"
+    table_name = "yellow_taxi_data"
+
+    # --- Main Logic ---
+    # Connect to the database once
+    con = duckdb.connect(db_file)
+    logger.info(f"Connected to DuckDB database: {db_file}")
+
+    # 1. Create the table with the first month of the first year's data
+    first_year = years[0]
+    first_month_url = base_url.format(year=first_year, month=1)
+
     try:
-        logger.info(f"Creating table with January data from {first_month_url}")
+        logger.info(f"Attempting to create table '{table_name}' with data from {first_month_url}")
         con.execute(f"""
-            CREATE TABLE yellow_taxi_data AS
+            CREATE TABLE {table_name} AS
             SELECT * FROM read_parquet('{first_month_url}')
         """)
-        logger.info(f"Created table with {year}-01 yellow taxi data")  # <- Fixed log message
+        logger.info(f"Successfully created table with {first_year}-01 data.")
     except Exception as e:
-        logger.error(f"Failed to create table with {first_month_url}: {e}")
-        return
-    
-    # Insert data from remaining months
-    for month in range(2, 13):
-        url = base_url.format(year=year, month=month)
-        logger.info(f"Inserting month {month} data from {url}")
-        try:
-            con.execute(f"""
-                INSERT INTO yellow_taxi_data  -- <- Fixed table name
-                SELECT * FROM read_parquet('{url}')
-            """)
-            logger.info(f"Added {year}-{month:02d} yellow taxi data")
-        except Exception as e:
-            logger.error(f"Failed to insert data from {url}: {e}")
-    
-    con.close()
-    print("Yellow taxi data saved to emissions.duckdb")
+        # This will catch errors if the table already exists, allowing the script to proceed
+        logger.warning(f"Could not create table (it might already exist): {e}")
+
+    # 2. Loop through all years and months to insert the remaining data
+    for year in years:
+        for month in range(1, 13):
+            # Skip the data we already used to create the table
+            if year == first_year and month == 1:
+                logger.info(f"Skipping {year}-01 data as it was used for table creation.")
+                continue
+
+            url = base_url.format(year=year, month=month)
+            logger.info(f"Processing data for {year}-{month:02d} from {url}")
+
+            try:
+                # Insert data into the existing table
+                con.execute(f"""
+                    INSERT INTO {table_name}
+                    SELECT * FROM read_parquet('{url}')
+                """)
+                logger.info(f"Successfully inserted data for {year}-{month:02d}.")
+            except Exception as e:
+                # Log an error if a specific file fails, but continue with the next
+                logger.error(f"Failed to insert data from {url}: {e}")
+
+    # Close the database connection
+    logger.info(f"Data processing complete. All data saved to '{table_name}' in {db_file}")
+
+# --- Configuration ---
+def download_green_taxi_data():
+    years = [2015, 2016, 2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024]
+    base_url = "https://d37ci6vzurychx.cloudfront.net/trip-data/green_tripdata_{year}-{month:02d}.parquet"
+    db_file = "emissions.duckdb"
+    table_name = "green_taxi_data"
+
+    # --- Main Logic ---
+    # Connect to the database once
+    con = duckdb.connect(db_file)
+    logger.info(f"Connected to DuckDB database: {db_file}")
+
+    # 1. Create the table with the first month of the first year's data
+    first_year = years[0]
+    first_month_url = base_url.format(year=first_year, month=1)
+
+    try:
+        logger.info(f"Attempting to create table '{table_name}' with data from {first_month_url}")
+        con.execute(f"""
+            CREATE TABLE {table_name} AS
+            SELECT * FROM read_parquet('{first_month_url}')
+        """)
+        logger.info(f"Successfully created table with {first_year}-01 data.")
+    except Exception as e:
+        # This will catch errors if the table already exists, allowing the script to proceed
+        logger.warning(f"Could not create table (it might already exist): {e}")
+
+    # 2. Loop through all years and months to insert the remaining data
+    for year in years:
+        for month in range(1, 13):
+            # Skip the data we already used to create the table
+            if year == first_year and month == 1:
+                logger.info(f"Skipping {year}-01 data as it was used for table creation.")
+                continue
+
+            url = base_url.format(year=year, month=month)
+            logger.info(f"Processing data for {year}-{month:02d} from {url}")
+
+            try:
+                # Insert data into the existing table
+                con.execute(f"""
+                    INSERT INTO {table_name}
+                    SELECT * FROM read_parquet('{url}')
+                """)
+                logger.info(f"Successfully inserted data for {year}-{month:02d}.")
+            except Exception as e:
+                # Log an error if a specific file fails, but continue with the next
+                logger.error(f"Failed to insert data from {url}: {e}")
+
+    # Close the database connection
+    logger.info(f"Data processing complete. All data saved to '{table_name}' in {db_file}")
 
 def lookup_vehicle_emissions():
     con = duckdb.connect("emissions.duckdb")
@@ -137,5 +173,5 @@ def load_parquet_files():
 if __name__ == "__main__":
     download_yellow_taxi_data()
     download_green_taxi_data()
-    lookup_vehicle_emissions()
-    load_parquet_files()
+    #lookup_vehicle_emissions()
+    #load_parquet_files()
