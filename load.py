@@ -18,13 +18,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Configure logger
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s"
-)
-logger = logging.getLogger(__name__)
-
 # Download Parquet files for Yellow and Green taxi data for 2024
 def download_yellow_taxi_data():
     years = [2015, 2016, 2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024]
@@ -32,7 +25,6 @@ def download_yellow_taxi_data():
     db_file = "emissions.duckdb"
     table_name = "yellow_taxi_data"
 
-    # --- Main Logic ---
     # Connect to the database once
     con = duckdb.connect(db_file)
     logger.info(f"Connected to DuckDB database: {db_file}")
@@ -49,13 +41,12 @@ def download_yellow_taxi_data():
         """)
         logger.info(f"Successfully created table with {first_year}-01 data.")
     except Exception as e:
-        # This will catch errors if the table already exists, allowing the script to proceed
         logger.warning(f"Could not create table (it might already exist): {e}")
 
     # 2. Loop through all years and months to insert the remaining data
     for year in years:
         for month in range(1, 13):
-            # Skip the data we already used to create the table
+            # Skip the data used to create the table
             if year == first_year and month == 1:
                 logger.info(f"Skipping {year}-01 data as it was used for table creation.")
                 continue
@@ -84,7 +75,6 @@ def download_green_taxi_data():
     db_file = "emissions.duckdb"
     table_name = "green_taxi_data"
 
-    # --- Main Logic ---
     # Connect to the database once
     con = duckdb.connect(db_file)
     logger.info(f"Connected to DuckDB database: {db_file}")
@@ -104,7 +94,7 @@ def download_green_taxi_data():
         # This will catch errors if the table already exists, allowing the script to proceed
         logger.warning(f"Could not create table (it might already exist): {e}")
 
-    # 2. Loop through all years and months to insert the remaining data
+    # Loop through all years and months to insert the remaining data
     for year in years:
         for month in range(1, 13):
             # Skip the data we already used to create the table
@@ -129,28 +119,34 @@ def download_green_taxi_data():
     # Close the database connection
     logger.info(f"Data processing complete. All data saved to '{table_name}' in {db_file}")
 
-def lookup_vehicle_emissions():
-    con = duckdb.connect("emissions.duckdb")
+
+def create_emissions_lookup(con, csv_path):
+    """
+    Creates a lookup table for vehicle emissions by loading data from a CSV file.
     
+    Args:
+        con: An active DuckDB connection.
+        csv_path (str): The file path to the vehicle_emissions.csv file.
+    """
+    logger.info(f"Creating or replacing 'vehicle_emissions' table from {csv_path}...")
     try:
-        con.execute("""
-            CREATE OR REPLACE TABLE vehicle_emissions (
-                vehicle_type VARCHAR,
-                co2_grams_per_mile FLOAT
-            );
-            INSERT INTO vehicle_emissions (vehicle_type, co2_grams_per_mile) VALUES
-            ('yellow_taxi', 380),
-            ('green_taxi', 350);
-        """)
+        # Read the CSV file into a pandas DataFrame
+        emissions_df = pd.read_csv(csv_path)
         
-        # Verify it worked
-        result = con.execute("SELECT COUNT(*) FROM vehicle_emissions").fetchone()
-        print(f"Vehicle emissions table created with {result[0]} records")
+        # Create a permanent table in DuckDB directly from the DataFrame
+        con.execute("""
+            CREATE OR REPLACE TABLE vehicle_emissions AS 
+            SELECT * FROM emissions_df
+        """)
+
+        # Verification
+        count = con.execute("SELECT COUNT(*) FROM vehicle_emissions").fetchone()[0]
+        logger.info(f"Successfully created 'vehicle_emissions' table with {count} records.")
+        print(f"Loaded {count} vehicle emission records.")
         
     except Exception as e:
-        print(f"Error creating vehicle emissions table: {e}")
-    finally:
-        con.close()
+        logger.error(f"Failed to create vehicle_emissions table from CSV. Error: {e}")
+        print(f"Failed to create vehicle_emissions table from CSV. Error: {e}")
 
 def load_parquet_files():
 
@@ -171,7 +167,9 @@ def load_parquet_files():
         logger.error(f"An error occurred: {e}")
 
 if __name__ == "__main__":
+    con = duckdb.connect(database='emissions.duckdb', read_only=False)
     download_yellow_taxi_data()
     download_green_taxi_data()
-    #lookup_vehicle_emissions()
-    #load_parquet_files()
+    emissions_csv_path = 'data/vehicle_emissions.csv'
+    create_emissions_lookup(con, emissions_csv_path)
+    load_parquet_files()

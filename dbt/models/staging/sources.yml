@@ -1,0 +1,13 @@
+version: 2
+
+sources:
+  - name: nyc_taxi
+    schema: main
+    description: "Source database containing raw and cleaned NYC taxi data."
+    tables:
+      - name: yellow_taxi_trips_clean
+        description: "Cleaned yellow taxi trip records for 2015-2024."
+      - name: green_taxi_trips_clean
+        description: "Cleaned green taxi trip records for 2015-2024."
+      - name: vehicle_emissions
+        description: "Lookup table for CO2 emissions factors."

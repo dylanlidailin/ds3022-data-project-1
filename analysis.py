@@ -2,7 +2,7 @@ import duckdb
 import logging
 import matplotlib.pyplot as plt
 
-# --- Boilerplate setup for logging ---
+# Setting up logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
@@ -15,10 +15,10 @@ def analysis():
     try:
         # PROCESS 1: Connect to the database
         con = duckdb.connect("emissions.duckdb", read_only=True)
-        # LOG: Records a successful database connection.
+        # Records a successful database connection.
         logger.info("Successfully connected to DuckDB for analysis.")
         print("Connected to DuckDB for analysis.")
-        # 1. Largest carbon producing trip
+        # argest carbon producing trip
         logger.info("Starting analysis: Largest carbon producing trips.")
         print("\n--- Largest Carbon Producing Trips ---")
         for taxi_type in ['yellow', 'green']:
@@ -32,8 +32,7 @@ def analysis():
             print(f"Largest CO2 trip for {taxi_type.upper()} taxi -> Distance: {result[0]} miles, Passengers: {result[1]}, CO2: {result[2]:.2f} kgs")
         logger.info("Analysis complete: Largest carbon producing trips.")
 
-        # 2-5. Averages by time periods
-        # This loop handles hours, days, weeks, and months efficiently
+        # Provide loops for other analyses
         time_periods = {
             "Hour of the Day": "hour_of_day",
             "Day of the Week": "day_of_week",
@@ -44,7 +43,6 @@ def analysis():
             logger.info(f"Starting analysis: Averages by {label}.")
             print(f"\n--- Carbon Heavy/Light {label} ---")
             for taxi_type in ['yellow', 'green']:
-                # FIX: Querying the _transformed table
                 results = con.execute(f"""
                     SELECT {period}, AVG(trip_co2_kgs) AS avg_co2
                     FROM {taxi_type}_taxi_data_clean
@@ -60,11 +58,11 @@ def analysis():
                     print(f"  - Most Carbon Light -> {label.split(' ')[0]} {lightest[0]}: {lightest[1]:.3f} kgs/trip")
             logger.info(f"Analysis complete: Averages by {label}.")
 
-        # 6. Time-series plot of MONTH vs CO2 totals
+        # Time-series plot of MONTH vs CO2 totals
         logger.info("Starting analysis: Monthly CO2 totals for plotting.")
         print("\n--- Generating Time-Series Plot of Monthly CO2 Totals ---")
 
-        # FIX: Use one efficient GROUP BY query per taxi type instead of looping
+        # Use one efficient GROUP BY query per taxi type
         yellow_monthly_data = con.execute("""
             SELECT month_of_year, SUM(trip_co2_kgs)
             FROM yellow_taxi_data_clean
@@ -77,7 +75,7 @@ def analysis():
             GROUP BY month_of_year ORDER BY month_of_year;
         """).fetchall()
 
-        # Process results into a plottable format, ensuring all 12 months are present
+        # Prepare for plotting
         yellow_totals = {row[0]: row[1] for row in yellow_monthly_data}
         green_totals = {row[0]: row[1] for row in green_monthly_data}
         months = range(1, 13)
@@ -99,7 +97,6 @@ def analysis():
         logger.info("Plot saved as 'monthly_co2_totals.png'.")
 
     except Exception as e:
-        # LOG: Records any error that occurs.
         logger.error(f"An error occurred during analysis: {e}")
 
 if __name__ == "__main__":
