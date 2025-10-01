@@ -13,67 +13,24 @@ logger = logging.getLogger(__name__)
 
 DB_FILE = "emissions10yrs.duckdb"
 BASE_URL = "https://d37ci6vzurychx.cloudfront.net/trip-data"
+EMISSIONS_CSV_PATH = 'data/vehicle_emissions.csv'
 
-# Loading yellow taxi's emission data
-def load_yellow_taxi_data(con):
+
+def load_taxi_data(con, taxi_type):
     """
-    The function loads yellow taxi data using DuckDB's direct read_parquet('url') method.
-    This version no longer uses a User-Agent header.
+    Loads taxi data for a specific type (yellow or green) into the database.
+    Includes a pause after each file download to rate limit requests.
     """
-    taxi_type = "yellow"
-    table_name = "yellow_taxi_trips"
+    table_name = f"{taxi_type}_taxi_trips"
     years = range(2015, 2025)
     
-    logger.info(f"--- Starting to load data for {table_name} using direct URL method ---")
+    logger.info(f"--- Starting to load data for {table_name} ---")
     
+    # Create an empty table based on the schema of a recent file
     try:
         schema_url = f"{BASE_URL}/{taxi_type}_tripdata_2024-01.parquet"
         con.execute(f"""
-            CREATE OR REPLACE TABLE {table_name} AS 
-            SELECT * FROM read_parquet('{schema_url}') LIMIT 0;
-        """)
-        logger.info(f"Successfully created empty table '{table_name}'.")
-
-    except Exception as e:
-        logger.critical(f"Could not create table schema for {table_name}. Aborting. Error: {e}")
-        return
-
-    total_inserted_count = 0
-    for year in years:
-        for month in range(1, 13):
-            url = f"{BASE_URL}/{taxi_type}_tripdata_{year}-{month:02d}.parquet"
-            logger.info(f"Processing {url}...")
-            
-            try:
-                result = con.execute(f"""
-                    INSERT INTO {table_name}
-                    SELECT * FROM read_parquet('{url}')
-                """).fetchone()
-
-                inserted_for_month = result[0] if result else 0
-                total_inserted_count += inserted_for_month
-                logger.info(f"Successfully inserted {inserted_for_month:,} records for {year}-{month:02d}.")
-            except Exception as e:
-                logger.warning(f"Could not load data for {year}-{month:02d} (yellow). Skipping. Error: {e}")
-                
-    logger.info(f"--- Finished loading for {table_name}. Total records inserted: {total_inserted_count:,} ---")
-
-
-def load_green_taxi_data(con):
-    """
-    Loads green taxi data using DuckDB's fast, direct read_parquet('url') method.
-    Includes a 10-second pause after each file request.
-    """
-    taxi_type = "green"
-    table_name = "green_taxi_trips"
-    years = range(2015, 2025)
-    
-    logger.info(f"--- Starting to load data for {table_name} using direct URL method ---")
-    
-    try:
-        schema_url = f"{BASE_URL}/{taxi_type}_tripdata_2024-01.parquet"
-        con.execute(f"""
-            CREATE OR REPLACE TABLE {table_name} AS 
+            CREATE TABLE IF NOT EXISTS {table_name} AS 
             SELECT * FROM read_parquet('{schema_url}') LIMIT 0;
         """)
         logger.info(f"Successfully created empty table '{table_name}'.")
@@ -82,12 +39,14 @@ def load_green_taxi_data(con):
         return
 
     total_inserted_count = 0
+    # Loop through all years and months to load data
     for year in years:
         for month in range(1, 13):
             url = f"{BASE_URL}/{taxi_type}_tripdata_{year}-{month:02d}.parquet"
             logger.info(f"Processing {url}...")
             
             try:
+                # Insert data directly from the URL into the table
                 result = con.execute(f"""
                     INSERT INTO {table_name}
                     SELECT * FROM read_parquet('{url}')
@@ -96,37 +55,27 @@ def load_green_taxi_data(con):
                 inserted_for_month = result[0] if result else 0
                 total_inserted_count += inserted_for_month
                 logger.info(f"Successfully inserted {inserted_for_month:,} records for {year}-{month:02d}.")
+
+                # --- ADDED SLEEP ---
+                time.sleep(10)
+
             except Exception as e:
-                logger.warning(f"Could not load data for {year}-{month:02d} (green). Skipping. Error: {e}")
-            
+                logger.warning(f"Could not load data for {year}-{month:02d} ({taxi_type}). Skipping. Error: {e}")
                 
     logger.info(f"--- Finished loading for {table_name}. Total records inserted: {total_inserted_count:,} ---")
 
 
 def create_emissions_lookup(con, csv_path):
     """
-    Creates a lookup table for vehicle emissions by loading data from a CSV file.
-    
-    Args:
-        con: An active DuckDB connection.
-        csv_path (str): The file path to the vehicle_emissions.csv file.
+    Creates a lookup table for vehicle emissions from a local CSV file.
     """
     logger.info(f"Creating or replacing 'vehicle_emissions' table from {csv_path}...")
     try:
-        # Read the CSV file into a pandas DataFrame
         emissions_df = pd.read_csv(csv_path)
-        
-        # Create a permanent table in DuckDB directly from the DataFrame
-        con.execute("""
-            CREATE OR REPLACE TABLE vehicle_emissions AS 
-            SELECT * FROM emissions_df
-        """)
-
-        # Verification
+        con.execute("CREATE OR REPLACE TABLE vehicle_emissions AS SELECT * FROM emissions_df")
         count = con.execute("SELECT COUNT(*) FROM vehicle_emissions").fetchone()[0]
         logger.info(f"Successfully created 'vehicle_emissions' table with {count} records.")
         print(f"Loaded {count} vehicle emission records.")
-        
     except Exception as e:
         logger.error(f"Failed to create vehicle_emissions table from CSV. Error: {e}")
         print(f"Failed to create vehicle_emissions table from CSV. Error: {e}")
@@ -134,83 +83,71 @@ def create_emissions_lookup(con, csv_path):
 
 def summarize_data(con):
     """
-    Summarizes the data for yellow and green taxi trips in the database.
+    Calculates and prints a summary for both yellow and green taxi data.
     """
     logger.info("--- Starting Data Summarization ---")
-    try:
-        # Loop through each taxi type
-        for taxi_type in ['yellow', 'green']:
-            table_name = f"{taxi_type}_taxi_trips"
-            
-            # Select the correct timestamp column based on the taxi type
-            if taxi_type == 'yellow':
-                date_column = 'tpep_pickup_datetime'
-            else:
-                date_column = 'lpep_pickup_datetime'
-
-            # Build a single, dynamic SQL query
-            query = f"""
-                SELECT 
-                    COUNT(*) as total_trips,
-                    MIN({date_column}) as earliest_trip,
-                    MAX({date_column}) as latest_trip,
-                    AVG(trip_distance) as avg_distance,
-                    SUM(trip_distance) as total_distance
+    for taxi_type in ['yellow', 'green']:
+        table_name = f"{taxi_type}_taxi_trips"
+        date_column = 'tpep_pickup_datetime' if taxi_type == 'yellow' else 'lpep_pickup_datetime'
+        try:
+            stats = con.execute(f"""
+                SELECT COUNT(*), MIN({date_column}), MAX({date_column}), AVG(trip_distance), SUM(trip_distance)
                 FROM {table_name}
-            """
-            
-            # Execute the query and fetch the results
-            stats = con.execute(query).fetchone()
+            """).fetchone()
 
             if stats and stats[0] > 0:
-                # --- Log the summary ---
-                logger.info(f"--- Summary for {table_name} ---")
-                logger.info(f"Total Trips: {stats[0]:,}")
-                logger.info(f"Date Range: {stats[1]} to {stats[2]}")
-                logger.info(f"Average Trip Distance: {stats[3]:.2f} miles")
-                logger.info(f"Total Trip Distance: {stats[4]:,.0f} miles")
-                
-                # --- Print the summary to the console ---
-                print(f"--- Summary for {table_name} ---")
-                print(f"Total Trips: {stats[0]:,}")
-                print(f"Date Range: {stats[1]} to {stats[2]}")
-                print(f"Average Trip Distance: {stats[3]:.2f} miles")
-                print(f"Total Trip Distance: {stats[4]:,.0f} miles")
+                summary = {
+                    "Total Trips": f"{stats[0]:,}",
+                    "Date Range": f"{stats[1]} to {stats[2]}",
+                    "Average Trip Distance": f"{stats[3]:.2f} miles",
+                    "Total Trip Distance": f"{stats[4]:,.0f} miles"
+                }
+                logger.info(f"Summary for {table_name}: {summary}")
+                print(f"\n--- Summary for {table_name} ---")
+                for key, value in summary.items():
+                    print(f"{key}: {value}")
             else:
                 logger.warning(f"No data found for {table_name} to summarize.")
-                print(f"--- No data found for {table_name} ---")
+                print(f"\n--- No data found for {table_name} ---")
+        except Exception as e:
+            logger.error(f"Could not summarize {table_name}. Error: {e}")
+            print(f"\nCould not summarize {table_name}. Error: {e}")
 
-    except Exception as e:
-        logger.error(f"An error occurred during data summarization: {e}")
-        print(f"An error occurred during data summarization: {e}")
 
-
-# --- Main Execution ---
+# --- Main Execution Block ---
 def main():
-    """Main function to orchestrate the data loading process."""
-
-    #if os.path.exists(DB_FILE):
-        #logger.warning(f"Database file '{DB_FILE}' already exists. Removing it for a fresh start.")
-        #os.remove(DB_FILE)
-
+    """Main function to orchestrate the entire data loading pipeline."""
     con = None
     try:
-
+        print("--- Starting Data Loading Pipeline ---")
         con = duckdb.connect(database=DB_FILE)
         logger.info(f"Successfully connected to DuckDB at '{DB_FILE}'")
 
-        load_yellow_taxi_data(con)
-        
-        logger.info("Pausing for 5 seconds before loading green taxi data...")
-        #time.sleep(5)
+        # --- STEP 1: Load Yellow Taxi Data ---
+        print("\n>>> STEP 1: Loading Yellow Taxi Data...")
+        #load_taxi_data(con, 'yellow')
 
-        load_green_taxi_data(con)
+        # --- STEP 2: Load Green Taxi Data ---
+        print("\n>>> STEP 2: Loading Green Taxi Data...")
+        load_taxi_data(con, 'green')
+
+        # --- STEP 3: Create Emissions Lookup Table ---
+        print("\n>>> STEP 3: Creating Emissions Lookup Table...")
+        #create_emissions_lookup(con, EMISSIONS_CSV_PATH)
+        
+        # --- STEP 4: Summarize All Loaded Data ---
+        print("\n>>> STEP 4: Summarizing Loaded Data...")
         summarize_data(con)
-        emissions_csv_path = 'data/vehicle_emissions.csv'
-        create_emissions_lookup(con, emissions_csv_path)
+
+        print("\n🎉 Data loading pipeline completed successfully!")
 
     except Exception as e:
-        logger.critical(f"A critical error occurred during the main process: {e}")
+        logger.critical(f"A critical error occurred in the main process: {e}")
+    finally:
+        if con:
+            con.close()
+            logger.info("Database connection closed.")
+
 
 if __name__ == "__main__":
     main()

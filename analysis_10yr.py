@@ -8,7 +8,6 @@ logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
     filename='analysis.log',
-    filemode='w'
 )
 logger = logging.getLogger(__name__)
 DB_FILE = "emissions10yrs.duckdb"
@@ -108,7 +107,7 @@ def analyze_data():
         plt.legend()
         plt.grid(True, which='both', linestyle='--', linewidth=0.5)
         
-        plot_filename = 'monthly_co2_totals_seasonal.png'
+        plot_filename = 'monthly_co2_totals_seasonal_10yrs.png'
         plt.savefig(plot_filename)
         print(f"Plot saved successfully as '{plot_filename}'.")
         logger.info(f"Plot saved as '{plot_filename}'.")
