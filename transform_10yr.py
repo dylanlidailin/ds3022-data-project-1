@@ -59,7 +59,7 @@ def transform_taxi_data(con, taxi_type):
             FROM 
                 {cleaned_table} t
             JOIN 
-                vehicle_emissions e ON e.vehicle_type = '{taxi_type}'
+                vehicle_emissions e ON e.vehicle_type = '{taxi_type}_taxi'
         """
         
         con.execute(transform_query)
@@ -83,13 +83,13 @@ if __name__ == "__main__":
         transform_taxi_data(con, 'yellow')
         transform_taxi_data(con, 'green')
 
-        con.execute("DROP TABLE yellow_taxi_trips_clean;")
-        print("Dropped table 'yellow_taxi_trips_clean'.")
-        logger.info("Dropped table 'yellow_taxi_trips_clean'.")
+        # con.execute("DROP TABLE yellow_taxi_trips_clean;")
+        # print("Dropped table 'yellow_taxi_trips_clean'.")
+        # logger.info("Dropped table 'yellow_taxi_trips_clean'.")
         
-        con.execute("DROP TABLE green_taxi_trips_clean;")
-        print("Dropped table 'green_taxi_trips_clean'.")
-        logger.info("Dropped table 'green_taxi_trips_clean'.")
+        # con.execute("DROP TABLE green_taxi_trips_clean;")
+        # print("Dropped table 'green_taxi_trips_clean'.")
+        # logger.info("Dropped table 'green_taxi_trips_clean'.")
         
     except Exception as e:
         print(f"A fatal error occurred in the main process: {e}")
