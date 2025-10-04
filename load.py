@@ -3,6 +3,7 @@ import os
 import logging
 import requests
 import io
+import pandas as pd
 
 """
 Complete the load.py script to create a local, persistent DuckDB database that creates and loads (at most) three tables:
@@ -20,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 # Download Parquet files for Yellow and Green taxi data for 2024
 def download_yellow_taxi_data():
-    years = [2015, 2016, 2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024]
+    years = [2024]
     base_url = "https://d37ci6vzurychx.cloudfront.net/trip-data/yellow_tripdata_{year}-{month:02d}.parquet"
     db_file = "emissions.duckdb"
     table_name = "yellow_taxi_data"
@@ -70,7 +71,7 @@ def download_yellow_taxi_data():
 
 # --- Configuration ---
 def download_green_taxi_data():
-    years = [2015, 2016, 2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024]
+    years = [2024]
     base_url = "https://d37ci6vzurychx.cloudfront.net/trip-data/green_tripdata_{year}-{month:02d}.parquet"
     db_file = "emissions.duckdb"
     table_name = "green_taxi_data"
@@ -118,6 +119,38 @@ def download_green_taxi_data():
 
     # Close the database connection
     logger.info(f"Data processing complete. All data saved to '{table_name}' in {db_file}")
+
+def summarize_data(con):
+    """
+    Calculates and prints a summary for both yellow and green taxi data.
+    """
+    logger.info("--- Starting Data Summarization ---")
+    for taxi_type in ['yellow', 'green']:
+        table_name = f"{taxi_type}_taxi_data"
+        date_column = 'tpep_pickup_datetime' if taxi_type == 'yellow' else 'lpep_pickup_datetime'
+        try:
+            stats = con.execute(f"""
+                SELECT COUNT(*), MIN({date_column}), MAX({date_column}), AVG(trip_distance), SUM(trip_distance)
+                FROM {table_name}
+            """).fetchone()
+
+            if stats and stats[0] > 0:
+                summary = {
+                    "Total Trips": f"{stats[0]:,}",
+                    "Date Range": f"{stats[1]} to {stats[2]}",
+                    "Average Trip Distance": f"{stats[3]:.2f} miles",
+                    "Total Trip Distance": f"{stats[4]:,.0f} miles"
+                }
+                logger.info(f"Summary for {table_name}: {summary}")
+                print(f"\n--- Summary for {table_name} ---")
+                for key, value in summary.items():
+                    print(f"{key}: {value}")
+            else:
+                logger.warning(f"No data found for {table_name} to summarize.")
+                print(f"\n--- No data found for {table_name} ---")
+        except Exception as e:
+            logger.error(f"Could not summarize {table_name}. Error: {e}")
+            print(f"\nCould not summarize {table_name}. Error: {e}")
 
 
 def create_emissions_lookup(con, csv_path):
@@ -171,5 +204,6 @@ if __name__ == "__main__":
     download_yellow_taxi_data()
     download_green_taxi_data()
     emissions_csv_path = 'data/vehicle_emissions.csv'
+    summarize_data(con)
     create_emissions_lookup(con, emissions_csv_path)
     load_parquet_files()
